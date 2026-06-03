@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  /* Convenience handles for the iPhone safe areas. */
+  --sai-top: env(safe-area-inset-top, 0px);
+  --sai-bottom: env(safe-area-inset-bottom, 0px);
+  --sai-left: env(safe-area-inset-left, 0px);
+  --sai-right: env(safe-area-inset-right, 0px);
+}
+
+html,
+body {
+  background-color: #0b0f14;
+  color: #e7ecf2;
+  /* Don't let iOS reflow our font sizes in landscape. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* Avoid the rubber-band white flash past the page edges. */
+  overscroll-behavior-y: none;
+}
+
+/* Smooth momentum scrolling on iOS. */
+body {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Kill the grey tap-highlight box on buttons/links on iOS. */
+a,
+button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Thin dark scrollbars to match the theme. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #27313d #0b0f14;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #27313d;
+  border-radius: 8px;
+}
+
+@layer components {
+  .card {
+    @apply rounded-2xl border border-ink-500/60 bg-ink-800/80 shadow-lg shadow-black/20;
+  }
+  .btn {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-4 py-3 text-[15px]
+           font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50
+           active:scale-[0.98];
+  }
+  .btn-primary {
+    @apply btn bg-brand-500 text-ink-900 hover:bg-brand-400;
+  }
+  .btn-ghost {
+    @apply btn bg-ink-600 text-ink-100 hover:bg-ink-500;
+  }
+  .btn-danger {
+    @apply btn bg-red-500/15 text-red-300 hover:bg-red-500/25;
+  }
+  /* text-base (16px) is intentional: iOS Safari zooms the page when you focus
+     an input smaller than 16px. Keeping inputs at 16px prevents that jump. */
+  .input {
+    @apply w-full rounded-xl border border-ink-500 bg-ink-900/60 px-3.5 py-3 text-base text-ink-100
+           placeholder:text-ink-300 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink-200;
+  }
+  .chip {
+    @apply inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-ink-500 bg-ink-700
+           px-4 py-2 text-[15px] text-ink-100 transition-colors active:scale-95;
+  }
+  .chip-on {
+    @apply border-brand-500 bg-brand-500/15 text-brand-200;
+  }
+}
+
+@layer utilities {
+  /* Safe-area padding helpers for the iPhone notch / home indicator. */
+  .pt-safe {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+  .pb-safe {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  .px-safe {
+    padding-left: max(env(safe-area-inset-left), 0px);
+    padding-right: max(env(safe-area-inset-right), 0px);
+  }
+}
