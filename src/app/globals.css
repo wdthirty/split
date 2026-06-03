@@ -84,15 +84,23 @@ button {
 }
 
 @layer utilities {
-  /* Safe-area padding helpers for the iPhone notch / home indicator. */
-  .pt-safe {
-    padding-top: max(env(safe-area-inset-top), 0px);
-  }
-  .pb-safe {
-    padding-bottom: max(env(safe-area-inset-bottom), 0px);
-  }
+  /* Safe-area helpers. These OWN the padding on their axis and fold in a base
+     gutter, so they never collapse to 0 on phones without side insets (the bug
+     where divs hugged the screen edges). Use these INSTEAD of px-4/py-* on the
+     same axis, not alongside them. */
+
+  /* Horizontal gutter: at least 1rem, more if the device has side insets
+     (e.g. landscape with a notch). */
   .px-safe {
-    padding-left: max(env(safe-area-inset-left), 0px);
-    padding-right: max(env(safe-area-inset-right), 0px);
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  /* Top padding = the requested space PLUS the top inset (status bar / island). */
+  .pt-safe {
+    padding-top: calc(0.75rem + env(safe-area-inset-top));
+  }
+  /* Bottom padding = the requested space PLUS the home-indicator inset. */
+  .pb-safe {
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
   }
 }

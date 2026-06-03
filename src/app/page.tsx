@@ -37,7 +37,7 @@ export default function HomePage() {
   return (
     <>
       <TopBar />
-      <main className="mx-auto max-w-3xl px-4 py-6 px-safe pb-safe">
+      <main className="mx-auto max-w-3xl px-safe py-6">
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-xl font-bold">Your groups</h1>
           <button onClick={() => setShowCreate(true)} className="btn-primary px-3 py-2 text-sm">

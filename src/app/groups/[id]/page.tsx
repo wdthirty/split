@@ -105,7 +105,7 @@ export default function GroupPage({ params }: { params: Promise<{ id: string }> 
   return (
     <>
       <TopBar />
-      <main className="mx-auto max-w-3xl px-4 py-6 px-safe pb-36">
+      <main className="mx-auto max-w-3xl px-safe py-6 pb-36">
         {/* Header */}
         <div className="mb-5 flex items-center gap-3">
           <Link href="/" className="text-ink-300 hover:text-ink-100">
@@ -244,8 +244,8 @@ export default function GroupPage({ params }: { params: Promise<{ id: string }> 
       </main>
 
       {/* Thumb-reachable action bar, pinned above the home indicator. */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-600/70 bg-ink-900/90 pb-safe px-safe backdrop-blur">
-        <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3 px-4 py-3">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-ink-600/70 bg-ink-900/90 px-safe pb-safe pt-3 backdrop-blur">
+        <div className="mx-auto grid max-w-3xl grid-cols-2 gap-3">
           <button onClick={() => setShowExpense(true)} className="btn-primary">
             + Add expense
           </button>
