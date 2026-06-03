@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import type { Member } from "@/lib/types";
 import { Modal } from "./Modal";
 
-const EMOJI_CHOICES = ["👥", "🏠", "✈️", "🏖️", "🍻", "🍕", "🎮", "🚗", "⛰️", "🎉"];
+const EMOJI_CHOICES = ["👥", "🏠", "✈️", "🏖️", "🍻", "🍕", "🎮", "🚗", "⛰️", "🎉", "⛳"];
 
 export function CreateGroupModal({
   open,
