@@ -31,6 +31,51 @@ type FeedItem =
   | { kind: "expense"; at: string; data: Expense }
   | { kind: "settlement"; at: string; data: Settlement };
 
+// My direct tab with each other person: +ve => they owe me, -ve => I owe them.
+// Built only from expenses/settlements that involve me, so it never exposes
+// what other people owe each other — these are the true pairwise amounts.
+type PairTab = { memberId: string; name: string; net: number };
+
+function pairwiseWithMe(
+  meId: string,
+  members: Member[],
+  expenses: Expense[],
+  settlements: Settlement[],
+): PairTab[] {
+  const net = new Map<string, number>(); // otherId -> cents they owe me
+  const bump = (other: string, delta: number) =>
+    net.set(other, (net.get(other) ?? 0) + delta);
+
+  for (const e of expenses) {
+    if (e.paidBy === meId) {
+      // I fronted it; each other person's share is owed to me.
+      for (const s of e.shares) {
+        if (s.memberId !== meId) bump(s.memberId, s.share);
+      }
+    } else {
+      // Someone else fronted it; if I have a share, I owe the payer that much.
+      const myShare = e.shares.find((s) => s.memberId === meId)?.share ?? 0;
+      if (myShare > 0) bump(e.paidBy, -myShare);
+    }
+  }
+
+  for (const s of settlements) {
+    // Only settlements I'm a party to affect my tabs.
+    if (s.fromMember === meId) bump(s.toMember, s.amount);
+    else if (s.toMember === meId) bump(s.fromMember, -s.amount);
+  }
+
+  const nameOf = new Map(members.map((m) => [m.id, m.name]));
+  return Array.from(net.entries())
+    .filter(([, cents]) => cents !== 0)
+    .map(([memberId, cents]) => ({
+      memberId,
+      name: nameOf.get(memberId) ?? "Someone",
+      net: cents,
+    }))
+    .sort((a, b) => b.net - a.net);
+}
+
 export default function HomePage() {
   const { member, loading } = useAuth();
   const [snap, setSnap] = useState<Snapshot | null>(null);
@@ -124,7 +169,15 @@ export default function HomePage() {
     .filter((item) => !mineOnly || involvesMe(item))
     .sort((a, b) => (a.at < b.at ? 1 : -1));
 
-  const settledUp = snap.transfers.length === 0;
+  // My true pairwise tabs (who owes me / I owe, exact amounts, nothing leaked).
+  const myTabs = pairwiseWithMe(member.id, snap.members, snap.expenses, snap.settlements);
+
+  // The fewest-payments plan, but only the transfers I'm actually part of, so I
+  // don't see settle-up steps between other people.
+  const myTransfers = snap.transfers.filter(
+    (t) => t.from === member.id || t.to === member.id,
+  );
+  const settledUp = myTransfers.length === 0;
 
   return (
     <>
@@ -132,7 +185,7 @@ export default function HomePage() {
       <main className="mx-auto max-w-3xl px-safe py-6 pb-36">
         {/* Your standing */}
         {myBalance === 0 ? (
-          <p className="mb-4 py-2 text-center text-lg text-ink-200">
+          <p className="card mb-4 p-5 text-center text-lg text-ink-200">
             You&apos;re all settled up 🎉
           </p>
         ) : (
@@ -149,32 +202,40 @@ export default function HomePage() {
               </p>
             )}
 
-            {/* Per-person balances */}
+            {/* Your tabs — true pairwise amounts with each person. */}
             <div className="mt-4 grid gap-1.5">
-              {snap.balances
-                .filter((b) => b.memberId !== member.id && b.net !== 0)
-                .sort((a, b) => b.net - a.net)
-                .map((b) => (
-                  <div key={b.memberId} className="flex items-center justify-between text-sm">
-                    <span className="text-ink-200">{b.name}</span>
-                    <span className={b.net > 0 ? "text-brand-400" : "text-red-400"}>
-                      {b.net > 0 ? "is owed " : "owes "}
-                      {formatCents(Math.abs(b.net))}
-                    </span>
-                  </div>
-                ))}
+              {myTabs.map((b) => (
+                <div key={b.memberId} className="flex items-center justify-between text-sm">
+                  <span className="text-ink-200">{b.name}</span>
+                  <span className={b.net > 0 ? "text-brand-400" : "text-red-400"}>
+                    {b.net > 0 ? "owes you " : "you owe "}
+                    {formatCents(Math.abs(b.net))}
+                  </span>
+                </div>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Suggested settle-up plan */}
+        {/* Suggested settle-up plan — collapsed by default. It's a global
+            fewest-payments shortcut, so its amounts can differ from the exact
+            tabs above; tuck it behind a toggle so the true tabs lead. */}
         {!settledUp && (
-          <div className="card mb-4 p-4">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-200">
-              Simplest way to settle up
-            </h2>
-            <div className="grid gap-2">
-              {snap.transfers.map((t, i) => (
+          <details className="card group mb-4 p-4">
+            <summary className="flex cursor-pointer list-none items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-200">
+                Simplest way to settle up
+              </h2>
+              <span className="text-lg leading-none text-ink-400 transition-transform group-open:rotate-90">
+                ›
+              </span>
+            </summary>
+            <p className="mt-2 text-xs text-ink-300">
+              A shortcut to clear everything in the fewest payments — amounts may
+              differ from your exact tabs above.
+            </p>
+            <div className="mt-3 grid gap-2">
+              {myTransfers.map((t, i) => (
                 <button
                   key={i}
                   onClick={() => {
@@ -195,7 +256,7 @@ export default function HomePage() {
                 </button>
               ))}
             </div>
-          </div>
+          </details>
         )}
 
         {/* Activity feed */}
@@ -222,7 +283,7 @@ export default function HomePage() {
           </div>
         </div>
         {feed.length === 0 ? (
-          <p className="p-8 text-center text-ink-300">
+          <p className="card p-8 text-center text-ink-300">
             {mineOnly ? "Nothing involving you yet." : "No expenses yet. Add the first one!"}
           </p>
         ) : (

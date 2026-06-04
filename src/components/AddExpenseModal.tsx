@@ -8,6 +8,29 @@ import { Modal } from "./Modal";
 import { Select } from "./Select";
 import { Spinner } from "./Spinner";
 
+// Remembers the last set of people an expense was split among, so the next
+// "Add expense" pre-selects the same crowd instead of resetting to everyone.
+const LAST_PARTICIPANTS_KEY = "sw_last_participants";
+
+function loadLastParticipants(): string[] | null {
+  try {
+    const raw = localStorage.getItem(LAST_PARTICIPANTS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.every((x) => typeof x === "string") ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveLastParticipants(ids: string[]) {
+  try {
+    localStorage.setItem(LAST_PARTICIPANTS_KEY, JSON.stringify(ids));
+  } catch {
+    /* localStorage may be unavailable; not critical */
+  }
+}
+
 export function AddExpenseModal({
   open,
   onClose,
@@ -38,7 +61,11 @@ export function AddExpenseModal({
     setAmountStr("");
     setPaidBy(meId);
     setSplitType("equal");
-    setParticipants(new Set(members.map((m) => m.id))); // everyone in by default
+    // Restore the last picked people, keeping only those still in this group.
+    // Falls back to everyone if there's nothing valid saved.
+    const memberIds = new Set(members.map((m) => m.id));
+    const saved = loadLastParticipants()?.filter((id) => memberIds.has(id));
+    setParticipants(saved && saved.length > 0 ? new Set(saved) : new Set(memberIds));
     setShareInputs({});
     setError(null);
   }, [open, meId, members]);
@@ -125,6 +152,8 @@ export function AddExpenseModal({
         method: "POST",
         body: JSON.stringify(payload),
       });
+      // Remember who this expense was split among for next time.
+      saveLastParticipants(includedMembers.map((m) => m.id));
       onSaved();
       onClose();
     } catch (err) {
@@ -192,7 +221,7 @@ export function AddExpenseModal({
         </div>
 
         {/* Split detail */}
-        <div className="space-y-3 rounded-xl bg-ink-900/40 p-3">
+        <div className="space-y-3">
           {/* Who's involved — drives all three split modes */}
           <div className="space-y-2">
             <p className="text-xs text-ink-300">Tap to include / exclude people.</p>

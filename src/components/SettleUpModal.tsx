@@ -29,6 +29,11 @@ export function SettleUpModal({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // The form is complete when payer and receiver are both chosen and distinct,
+  // and the amount parses to a positive value.
+  const amountCents = parseDollarsToCents(amountStr) ?? 0;
+  const canSubmit = Boolean(from) && Boolean(to) && from !== to && amountCents > 0;
+
   useEffect(() => {
     if (!open) return;
     setError(null);
@@ -45,8 +50,9 @@ export function SettleUpModal({
 
   async function submit() {
     setError(null);
-    const amount = parseDollarsToCents(amountStr) ?? 0;
-    if (amount <= 0) {
+    // Belt-and-braces: the button is disabled unless these hold, but guard
+    // anyway in case submit is reached some other way (e.g. keyboard).
+    if (amountCents <= 0) {
       setError("Enter an amount greater than 0");
       return;
     }
@@ -58,7 +64,7 @@ export function SettleUpModal({
     try {
       await api(`/api/settlements`, {
         method: "POST",
-        body: JSON.stringify({ from, to, amount }),
+        body: JSON.stringify({ from, to, amount: amountCents }),
       });
       onSaved();
       onClose();
@@ -86,7 +92,7 @@ export function SettleUpModal({
               }))}
             />
           </div>
-          <span className="mt-9 text-ink-300">→</span>
+          <span className="mt-9 text-ink-300">›</span>
           <div className="flex-1">
             <label className="label">Receiver</label>
             <Select
@@ -126,7 +132,7 @@ export function SettleUpModal({
           </div>
         )}
 
-        <button onClick={submit} disabled={busy} className="btn-primary w-full">
+        <button onClick={submit} disabled={busy || !canSubmit} className="btn-primary w-full">
           {busy ? (
             <>
               <Spinner size={18} /> Saving…
