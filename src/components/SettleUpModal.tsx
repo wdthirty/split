@@ -5,12 +5,13 @@ import { api } from "@/lib/api";
 import { parseDollarsToCents, centsToDollarString } from "@/lib/money";
 import type { Member, Transfer } from "@/lib/types";
 import { Modal } from "./Modal";
+import { Select } from "./Select";
+import { Spinner } from "./Spinner";
 
 export function SettleUpModal({
   open,
   onClose,
   onSaved,
-  groupId,
   members,
   meId,
   prefill,
@@ -18,7 +19,6 @@ export function SettleUpModal({
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
-  groupId: string;
   members: Member[];
   meId: string;
   prefill: Transfer | null;
@@ -56,7 +56,7 @@ export function SettleUpModal({
     }
     setBusy(true);
     try {
-      await api(`/api/groups/${groupId}/settlements`, {
+      await api(`/api/settlements`, {
         method: "POST",
         body: JSON.stringify({ from, to, amount }),
       });
@@ -74,28 +74,30 @@ export function SettleUpModal({
   return (
     <Modal open={open} onClose={onClose} title="Settle up">
       <div className="space-y-4">
-        <div className="flex items-center gap-2">
+        <div className="flex items-start gap-2">
           <div className="flex-1">
             <label className="label">Payer</label>
-            <select className="input" value={from} onChange={(e) => setFrom(e.target.value)}>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id === meId ? `${m.name} (you)` : m.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={from}
+              onChange={setFrom}
+              options={members.map((m) => ({
+                value: m.id,
+                label: m.id === meId ? `${m.name} (you)` : m.name,
+              }))}
+            />
           </div>
-          <span className="mt-6 text-ink-300">→</span>
+          <span className="mt-9 text-ink-300">→</span>
           <div className="flex-1">
             <label className="label">Receiver</label>
-            <select className="input" value={to} onChange={(e) => setTo(e.target.value)}>
-              <option value="">Select…</option>
-              {members.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.id === meId ? `${m.name} (you)` : m.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              value={to}
+              onChange={setTo}
+              placeholder="Select…"
+              options={members.map((m) => ({
+                value: m.id,
+                label: m.id === meId ? `${m.name} (you)` : m.name,
+              }))}
+            />
           </div>
         </div>
 
@@ -119,13 +121,19 @@ export function SettleUpModal({
         )}
 
         {error && (
-          <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+          <div className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-300">
             {error}
           </div>
         )}
 
         <button onClick={submit} disabled={busy} className="btn-primary w-full">
-          {busy ? "Saving…" : "Record payment"}
+          {busy ? (
+            <>
+              <Spinner size={18} /> Saving…
+            </>
+          ) : (
+            "Record payment"
+          )}
         </button>
       </div>
     </Modal>

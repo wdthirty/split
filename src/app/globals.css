@@ -49,7 +49,7 @@ button {
 
 @layer components {
   .card {
-    @apply rounded-2xl border border-ink-500/60 bg-ink-800/80 shadow-lg shadow-black/20;
+    @apply rounded-2xl bg-ink-800/80 shadow-lg shadow-black/20;
   }
   .btn {
     @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-4 py-3 text-[15px]
@@ -68,18 +68,18 @@ button {
   /* text-base (16px) is intentional: iOS Safari zooms the page when you focus
      an input smaller than 16px. Keeping inputs at 16px prevents that jump. */
   .input {
-    @apply w-full rounded-xl border border-ink-500 bg-ink-900/60 px-3.5 py-3 text-base text-ink-100
-           placeholder:text-ink-300 outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500;
+    @apply w-full rounded-xl bg-ink-900/60 px-3.5 py-3 text-base text-ink-100
+           placeholder:text-ink-300 outline-none focus:ring-1 focus:ring-brand-500;
   }
   .label {
     @apply mb-1.5 block text-xs font-medium uppercase tracking-wide text-ink-200;
   }
   .chip {
-    @apply inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-ink-500 bg-ink-700
+    @apply inline-flex min-h-[40px] items-center gap-1.5 rounded-full bg-ink-700
            px-4 py-2 text-[15px] text-ink-100 transition-colors active:scale-95;
   }
   .chip-on {
-    @apply border-brand-500 bg-brand-500/15 text-brand-200;
+    @apply bg-brand-500/15 text-brand-200;
   }
 }
 

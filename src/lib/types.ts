@@ -5,14 +5,6 @@ export type Member = {
   name: string;
 };
 
-export type Group = {
-  id: string;
-  name: string;
-  emoji: string;
-  createdBy: string | null;
-  memberCount: number;
-};
-
 export type SplitType = "equal" | "exact" | "percent";
 
 export type ExpenseShare = {
@@ -23,7 +15,6 @@ export type ExpenseShare = {
 
 export type Expense = {
   id: string;
-  groupId: string;
   description: string;
   amount: number; // cents
   paidBy: string;
@@ -35,7 +26,6 @@ export type Expense = {
 
 export type Settlement = {
   id: string;
-  groupId: string;
   fromMember: string;
   fromName: string;
   toMember: string;
@@ -44,7 +34,7 @@ export type Settlement = {
   createdAt: string;
 };
 
-// Net position of a member within a group: positive = others owe them.
+// Net position of a member across the ledger: positive = others owe them.
 export type MemberBalance = {
   memberId: string;
   name: string;

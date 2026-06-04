@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
 import { sql, newId } from "@/lib/db";
 import { currentMemberId } from "@/lib/auth";
-import { isGroupMember } from "@/lib/queries";
 
 // Record a repayment: `from` pays `to` `amount` cents.
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request) {
   const me = await currentMemberId();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id: groupId } = await params;
-  if (!(await isGroupMember(groupId, me))) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
 
   let body: { from?: string; to?: string; amount?: number };
   try {
@@ -30,19 +24,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Amount must be greater than 0" }, { status: 400 });
   }
 
-  // Both parties must be in the group.
+  // Both parties must be real members.
   const check = await sql`
-    SELECT count(*)::int AS n FROM group_members
-    WHERE group_id = ${groupId} AND member_id = ANY(${[from, to]})
+    SELECT count(*)::int AS n FROM members WHERE id = ANY(${[from, to]})
   `;
   if (Number(check.rows[0].n) !== 2) {
-    return NextResponse.json({ error: "Both people must be in the group" }, { status: 400 });
+    return NextResponse.json({ error: "Both people must be real" }, { status: 400 });
   }
 
   const id = newId("stl");
   await sql`
-    INSERT INTO settlements (id, group_id, from_member, to_member, amount)
-    VALUES (${id}, ${groupId}, ${from}, ${to}, ${amount})
+    INSERT INTO settlements (id, from_member, to_member, amount)
+    VALUES (${id}, ${from}, ${to}, ${amount})
   `;
   return NextResponse.json({ id }, { status: 201 });
 }

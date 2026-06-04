@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { sql, newId } from "@/lib/db";
 import { currentMemberId } from "@/lib/auth";
-import { isGroupMember } from "@/lib/queries";
 import { splitEqually, splitByPercent } from "@/lib/balances";
 import type { SplitType } from "@/lib/types";
 
@@ -18,14 +17,9 @@ type Body = {
   shares?: SharePayload[];
 };
 
-export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(req: Request) {
   const me = await currentMemberId();
   if (!me) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { id: groupId } = await params;
-  if (!(await isGroupMember(groupId, me))) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
 
   let body: Body;
   try {
@@ -80,20 +74,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Unknown split type" }, { status: 400 });
   }
 
-  // Verify all participants are actually in the group.
+  // Verify all participants are real members.
   const memberIds = [...shareMap.keys()];
   const check = await sql`
-    SELECT count(*)::int AS n FROM group_members
-    WHERE group_id = ${groupId} AND member_id = ANY(${memberIds})
+    SELECT count(*)::int AS n FROM members WHERE id = ANY(${memberIds})
   `;
   if (Number(check.rows[0].n) !== memberIds.length) {
-    return NextResponse.json({ error: "All participants must be in the group" }, { status: 400 });
+    return NextResponse.json({ error: "All participants must be real people" }, { status: 400 });
   }
 
   const expenseId = newId("exp");
   await sql`
-    INSERT INTO expenses (id, group_id, description, amount, paid_by, split_type, created_by)
-    VALUES (${expenseId}, ${groupId}, ${description}, ${amount}, ${paidBy}, ${splitType}, ${me})
+    INSERT INTO expenses (id, description, amount, paid_by, split_type, created_by)
+    VALUES (${expenseId}, ${description}, ${amount}, ${paidBy}, ${splitType}, ${me})
   `;
   for (const [memberId, share] of shareMap.entries()) {
     await sql`
