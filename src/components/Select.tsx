@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export type SelectOption = { value: string; label: string };
+export type SelectOption = { value: string; label: string; dot?: boolean };
 
 /**
  * Themed dropdown replacing the native <select>. Renders a button trigger
@@ -91,8 +91,13 @@ export function Select({
         onKeyDown={onKeyDown}
         className="input flex items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-50"
       >
-        <span className={selected ? "truncate text-ink-100" : "truncate text-ink-300"}>
-          {selected ? selected.label : placeholder}
+        <span className="flex min-w-0 items-center gap-2">
+          {selected?.dot && (
+            <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" aria-hidden="true" />
+          )}
+          <span className={selected ? "truncate text-ink-100" : "truncate text-ink-300"}>
+            {selected ? selected.label : placeholder}
+          </span>
         </span>
         <svg
           viewBox="0 0 20 20"
@@ -129,7 +134,12 @@ export function Select({
                     isActive ? "bg-ink-700" : ""
                   } ${isSelected ? "text-brand-300" : "text-ink-100"}`}
                 >
-                  <span className="truncate">{o.label}</span>
+                  <span className="flex min-w-0 items-center gap-2">
+                    {o.dot && (
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" aria-hidden="true" />
+                    )}
+                    <span className="truncate">{o.label}</span>
+                  </span>
                   {isSelected && (
                     <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4 shrink-0" aria-hidden="true">
                       <path

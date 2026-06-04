@@ -92,7 +92,7 @@ export function Modal({
       onClick={onClose}
     >
       <div
-        className="card w-full max-w-md max-h-[92vh] overflow-y-auto rounded-b-none px-5 pt-3 pb-5
+        className="card w-full max-w-md max-h-[92vh] overflow-y-auto rounded-b-none px-5 pt-3 pb-5 backdrop-blur-md
                    [padding-bottom:max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-2xl sm:pt-5 sm:pb-5"
         onClick={(e) => e.stopPropagation()}
         style={{

@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
-import { parseDollarsToCents, formatCents } from "@/lib/money";
-import type { Member, SplitType } from "@/lib/types";
+import { parseDollarsToCents, formatCents, centsToDollarString } from "@/lib/money";
+import type { Member, SplitType, Expense } from "@/lib/types";
 import { Modal } from "./Modal";
 import { Select } from "./Select";
 import { Spinner } from "./Spinner";
@@ -37,13 +37,19 @@ export function AddExpenseModal({
   onSaved,
   members,
   meId,
+  expense = null,
+  onDeleted,
 }: {
   open: boolean;
   onClose: () => void;
   onSaved: () => void;
   members: Member[];
   meId: string;
+  // When set, the modal edits this expense instead of creating a new one.
+  expense?: Expense | null;
+  onDeleted?: () => void;
 }) {
+  const isEdit = expense != null;
   const [description, setDescription] = useState("");
   const [amountStr, setAmountStr] = useState("");
   const [paidBy, setPaidBy] = useState(meId);
@@ -57,18 +63,40 @@ export function AddExpenseModal({
 
   useEffect(() => {
     if (!open) return;
+    setError(null);
+
+    if (expense) {
+      // Editing: prefill every field from the existing expense.
+      setDescription(expense.description);
+      setAmountStr(centsToDollarString(expense.amount));
+      setPaidBy(expense.paidBy);
+      setSplitType(expense.splitType);
+      setParticipants(new Set(expense.shares.map((s) => s.memberId)));
+      // Seed the per-person inputs for exact ($) / percent (%) modes.
+      const inputs: Record<string, string> = {};
+      for (const s of expense.shares) {
+        if (expense.splitType === "exact") {
+          inputs[s.memberId] = centsToDollarString(s.share);
+        } else if (expense.splitType === "percent") {
+          inputs[s.memberId] =
+            expense.amount > 0 ? String(Math.round((s.share / expense.amount) * 100)) : "";
+        }
+      }
+      setShareInputs(inputs);
+      return;
+    }
+
+    // Creating: blank form, restoring the last picked people (kept if still in
+    // the group), falling back to everyone.
     setDescription("");
     setAmountStr("");
     setPaidBy(meId);
     setSplitType("equal");
-    // Restore the last picked people, keeping only those still in this group.
-    // Falls back to everyone if there's nothing valid saved.
     const memberIds = new Set(members.map((m) => m.id));
     const saved = loadLastParticipants()?.filter((id) => memberIds.has(id));
     setParticipants(saved && saved.length > 0 ? new Set(saved) : new Set(memberIds));
     setShareInputs({});
-    setError(null);
-  }, [open, meId, members]);
+  }, [open, meId, members, expense]);
 
   const amountCents = parseDollarsToCents(amountStr) ?? 0;
 
@@ -86,6 +114,10 @@ export function AddExpenseModal({
     () => members.filter((m) => participants.has(m.id)),
     [members, participants],
   );
+
+  // An expense is only meaningful if it's split with at least one person who
+  // isn't the payer — otherwise it nets to zero (e.g. "Carrie paid for Carrie").
+  const hasOtherParticipant = includedMembers.some((m) => m.id !== paidBy);
 
   // Live preview of what each person owes, for feedback while typing. Only the
   // included people are considered, in every mode.
@@ -129,6 +161,10 @@ export function AddExpenseModal({
       setError("Enter an amount greater than 0");
       return;
     }
+    if (!hasOtherParticipant) {
+      setError("Split this with at least one other person");
+      return;
+    }
     setBusy(true);
     try {
       const payload: Record<string, unknown> = {
@@ -148,23 +184,46 @@ export function AddExpenseModal({
           .map((m) => ({ memberId: m.id, value: Number(shareInputs[m.id] ?? "") || 0 }))
           .filter((s) => s.value > 0);
       }
-      await api(`/api/expenses`, {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-      // Remember who this expense was split among for next time.
-      saveLastParticipants(includedMembers.map((m) => m.id));
+      if (isEdit) {
+        await api(`/api/expenses/${expense!.id}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await api(`/api/expenses`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        // Remember who this expense was split among for next time.
+        saveLastParticipants(includedMembers.map((m) => m.id));
+      }
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add expense");
+      setError(err instanceof Error ? err.message : "Failed to save expense");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!expense) return;
+    if (!confirm("Delete this expense?")) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await api(`/api/expenses/${expense.id}`, { method: "DELETE" });
+      onDeleted?.();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete expense");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add an expense">
+    <Modal open={open} onClose={onClose} title={isEdit ? "Edit expense" : "Add an expense"}>
       <div className="space-y-4">
         <div>
           <label className="label">Description</label>
@@ -302,17 +361,29 @@ export function AddExpenseModal({
 
         <button
           onClick={submit}
-          disabled={busy || !description.trim() || amountCents <= 0}
+          disabled={busy || !description.trim() || amountCents <= 0 || !hasOtherParticipant}
           className="btn-primary w-full"
         >
           {busy ? (
             <>
               <Spinner size={18} /> Saving…
             </>
+          ) : isEdit ? (
+            "Save changes"
           ) : (
             "Add expense"
           )}
         </button>
+
+        {isEdit && (
+          <button
+            onClick={remove}
+            disabled={busy}
+            className="w-full py-2 text-sm font-medium text-red-400 hover:text-red-300 disabled:opacity-50"
+          >
+            Delete expense
+          </button>
+        )}
       </div>
     </Modal>
   );

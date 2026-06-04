@@ -10,13 +10,13 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Split!",
+  title: "LiangFlix Split",
   description: "Split expenses with your group. Dark mode only.",
   // Behaves like a native app when added to the iPhone home screen.
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Split!",
+    title: "LiangFlix Split",
   },
   formatDetection: { telephone: false },
 };
