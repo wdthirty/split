@@ -48,6 +48,14 @@ export function nameKey(name: string): string {
   return name.trim().toLowerCase();
 }
 
+// Canonical display form: first letter uppercase, the rest lowercase.
+// e.g. "jOHN" -> "John", "  mary " -> "Mary".
+export function displayName(name: string): string {
+  const clean = name.trim();
+  if (!clean) return clean;
+  return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase();
+}
+
 /**
  * Register-or-recover. Given a valid group code + name:
  *  - if a member with that name already exists, log into it (recovery path)
@@ -67,10 +75,11 @@ export async function registerOrRecover(name: string): Promise<Member | null> {
   }
 
   const id = newId("mbr");
+  const display = displayName(clean);
   await sql`
-    INSERT INTO members (id, name, name_key) VALUES (${id}, ${clean}, ${key})
+    INSERT INTO members (id, name, name_key) VALUES (${id}, ${display}, ${key})
   `;
-  return { id, name: clean };
+  return { id, name: display };
 }
 
 // Read the current member id from the signed auth cookie (server components / routes).
