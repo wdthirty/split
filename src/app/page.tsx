@@ -33,9 +33,6 @@ type FeedItem =
   | { kind: "expense"; at: string; data: Expense }
   | { kind: "settlement"; at: string; data: Settlement };
 
-// Remembers the Activity feed filter ("mine" | "all") across visits.
-const ACTIVITY_FILTER_KEY = "sw_activity_filter";
-
 // My direct tab with each other person: +ve => they owe me, -ve => I owe them.
 // Built only from expenses/settlements that involve me, so it never exposes
 // what other people owe each other — these are the true pairwise amounts.
@@ -131,32 +128,9 @@ export default function HomePage() {
   // When set, the corresponding modal is open in edit mode for this item.
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [editSettlement, setEditSettlement] = useState<Settlement | null>(null);
-  const [mineOnly, setMineOnly] = useState(true);
   // null = no confetti; "normal" = a payment was recorded; "big" = that payment
   // cleared your last debt (you're fully settled up).
   const [confetti, setConfetti] = useState<null | "normal" | "big">(null);
-
-  // Restore the Activity filter from a previous visit. Read in an effect (not in
-  // useState) so server and first client render match — avoids hydration warnings.
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(ACTIVITY_FILTER_KEY);
-      if (saved === "all") setMineOnly(false);
-      else if (saved === "mine") setMineOnly(true);
-    } catch {
-      /* localStorage may be unavailable; default stands */
-    }
-  }, []);
-
-  // Persist the filter whenever it changes.
-  function changeMineOnly(value: boolean) {
-    setMineOnly(value);
-    try {
-      localStorage.setItem(ACTIVITY_FILTER_KEY, value ? "mine" : "all");
-    } catch {
-      /* not critical */
-    }
-  }
 
   const load = useCallback(async (): Promise<Snapshot | null> => {
     setLoadingSnap(true);
@@ -228,11 +202,12 @@ export default function HomePage() {
         item.data.shares.some((s) => s.memberId === member.id)
       : item.data.fromMember === member.id || item.data.toMember === member.id;
 
+  // Activity only ever shows what involves you (privacy — no group-wide feed).
   const feed: FeedItem[] = [
     ...snap.expenses.map((e) => ({ kind: "expense" as const, at: e.createdAt, data: e })),
     ...snap.settlements.map((s) => ({ kind: "settlement" as const, at: s.createdAt, data: s })),
   ]
-    .filter((item) => !mineOnly || involvesMe(item))
+    .filter((item) => involvesMe(item))
     .sort((a, b) => (a.at < b.at ? 1 : -1));
 
   // My true pairwise tabs (who owes me / I owe, exact amounts, nothing leaked).
@@ -373,7 +348,7 @@ export default function HomePage() {
                     <div key={i}>
                       <div className="grid grid-cols-[auto_auto_auto_1fr] items-center gap-2 text-sm">
                         <span className="truncate">
-                          <NameTag name={t.fromName} variant="underline" />
+                          <NameTag name={t.fromName} variant="underline" isMe={t.from === member.id} />
                         </span>
                         <svg viewBox="0 0 24 12" className="h-2.5 w-6 text-brand-300" aria-hidden="true">
                           <path
@@ -386,7 +361,7 @@ export default function HomePage() {
                           />
                         </svg>
                         <span className="truncate">
-                          <NameTag name={t.toName} variant="underline" />
+                          <NameTag name={t.toName} variant="underline" isMe={t.to === member.id} />
                         </span>
                         <span className="text-right font-semibold tabular-nums text-brand-300">
                           {formatCents(t.amount)}
@@ -412,9 +387,9 @@ export default function HomePage() {
                   className="flex items-center justify-between rounded-xl bg-ink-900/40 px-3 py-2.5 text-left transition-colors hover:bg-ink-700/50"
                 >
                   <span className="text-sm">
-                    <NameTag name={t.fromName} variant="underline" />
+                    <NameTag name={t.fromName} variant="underline" isMe={t.from === member.id} />
                     <span className="text-ink-300"> pays </span>
-                    <NameTag name={t.toName} variant="underline" />
+                    <NameTag name={t.toName} variant="underline" isMe={t.to === member.id} />
                   </span>
                   <span className="flex items-center gap-2">
                     <span className="font-semibold text-brand-300">{formatCents(t.amount)}</span>
@@ -426,39 +401,16 @@ export default function HomePage() {
           </details>
         )}
 
-        {/* Activity feed */}
-        <div className="mb-3 mt-6 flex items-center justify-between">
+        {/* Activity feed — always scoped to you. */}
+        <div className="mb-3 mt-6">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-200">Activity</h2>
-          <div className="flex rounded-lg bg-ink-800 p-0.5 text-xs font-medium">
-            {([
-              { key: false, label: "All" },
-              { key: true, label: "Just me" },
-            ] as const).map((opt) => (
-              <button
-                key={opt.label}
-                type="button"
-                onClick={() => changeMineOnly(opt.key)}
-                className={`rounded-md px-2.5 py-1 transition-colors ${
-                  mineOnly === opt.key
-                    ? "bg-brand-500/15 text-brand-200"
-                    : "text-ink-300 hover:text-ink-100"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
         </div>
         {feed.length === 0 ? (
-          <p className="card p-8 text-center text-ink-300">
-            {mineOnly ? "Nothing involving you yet." : "No expenses yet. Add the first one!"}
-          </p>
+          <p className="card p-8 text-center text-ink-300">Nothing involving you yet.</p>
         ) : (
           <div className="grid gap-2">
             {feed.map((item) => {
               const { mon, day } = dateParts(item.at);
-              // Only rows you're a part of are editable/clickable.
-              const mine = involvesMe(item);
               // Left date stack + icon are shared by both row types.
               const dateStack = (
                 <div className="w-9 shrink-0 text-center leading-tight">
@@ -466,10 +418,10 @@ export default function HomePage() {
                   <div className="text-base font-semibold text-ink-200">{day}</div>
                 </div>
               );
-              // Clickable rows are buttons with hover; others are inert divs.
-              const rowClass = `card flex w-full items-center gap-3 p-3.5 text-left${
-                mine ? " transition-colors hover:bg-ink-700/40" : ""
-              }`;
+              // Every visible row involves you (feed is pre-filtered), so all are
+              // clickable to edit.
+              const rowClass =
+                "card flex w-full items-center gap-3 p-3.5 text-left transition-colors hover:bg-ink-700/40";
 
               if (item.kind === "expense") {
                 const expense = item.data;
@@ -480,17 +432,26 @@ export default function HomePage() {
                     : stake.kind === "borrowed"
                       ? "text-orange-400"
                       : "text-ink-200";
-                const inner = (
-                  <>
+                return (
+                  <button
+                    key={expense.id}
+                    type="button"
+                    onClick={() => setEditExpense(expense)}
+                    className={rowClass}
+                  >
                     {dateStack}
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink-700 text-lg">
                       🧾
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium">{expense.description}</div>
+                      <div className="truncate font-medium text-white">{expense.description}</div>
                       <div className="truncate text-xs text-ink-100">
-                        <NameTag name={expense.paidByName} variant="underline" /> paid{" "}
-                        {formatCents(expense.amount)}
+                        <NameTag
+                          name={expense.paidByName}
+                          variant="underline"
+                          isMe={expense.paidBy === member.id}
+                        />{" "}
+                        paid {formatCents(expense.amount)}
                       </div>
                     </div>
                     {/* Right status + amount stack (fixed two lines => even height). */}
@@ -502,35 +463,35 @@ export default function HomePage() {
                         </div>
                       )}
                     </div>
-                  </>
-                );
-                return mine ? (
-                  <button
-                    key={expense.id}
-                    type="button"
-                    onClick={() => setEditExpense(expense)}
-                    className={rowClass}
-                  >
-                    {inner}
                   </button>
-                ) : (
-                  <div key={expense.id} className={rowClass}>
-                    {inner}
-                  </div>
                 );
               }
 
               const settlement = item.data;
-              const settleInner = (
-                <>
+              return (
+                <button
+                  key={settlement.id}
+                  type="button"
+                  onClick={() => setEditSettlement(settlement)}
+                  className={rowClass}
+                >
                   {dateStack}
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-brand-500/15 text-lg text-brand-300">
                     💸
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">
-                      <NameTag name={settlement.fromName} variant="underline" /> paid{" "}
-                      <NameTag name={settlement.toName} variant="underline" />
+                      <NameTag
+                        name={settlement.fromName}
+                        variant="underline"
+                        isMe={settlement.fromMember === member.id}
+                      />
+                      <span className="text-ink-100"> paid </span>
+                      <NameTag
+                        name={settlement.toName}
+                        variant="underline"
+                        isMe={settlement.toMember === member.id}
+                      />
                     </div>
                   </div>
                   <div className="shrink-0 text-right leading-tight">
@@ -539,21 +500,7 @@ export default function HomePage() {
                       {formatCents(settlement.amount)}
                     </div>
                   </div>
-                </>
-              );
-              return mine ? (
-                <button
-                  key={settlement.id}
-                  type="button"
-                  onClick={() => setEditSettlement(settlement)}
-                  className={rowClass}
-                >
-                  {settleInner}
                 </button>
-              ) : (
-                <div key={settlement.id} className={rowClass}>
-                  {settleInner}
-                </div>
               );
             })}
           </div>

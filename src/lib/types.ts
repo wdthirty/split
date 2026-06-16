@@ -5,7 +5,9 @@ export type Member = {
   name: string;
 };
 
-export type SplitType = "equal" | "exact" | "percent";
+// "percent" is legacy (kept so old expenses still load); new expenses use
+// "parts" instead — proportional ratio shares, no math required.
+export type SplitType = "equal" | "exact" | "percent" | "parts";
 
 export type ExpenseShare = {
   memberId: string;

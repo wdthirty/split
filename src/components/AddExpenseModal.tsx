@@ -8,27 +8,17 @@ import { Modal } from "./Modal";
 import { Select } from "./Select";
 import { Spinner } from "./Spinner";
 
-// Remembers the last set of people an expense was split among, so the next
-// "Add expense" pre-selects the same crowd instead of resetting to everyone.
-const LAST_PARTICIPANTS_KEY = "sw_last_participants";
-
-function loadLastParticipants(): string[] | null {
-  try {
-    const raw = localStorage.getItem(LAST_PARTICIPANTS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.every((x) => typeof x === "string") ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveLastParticipants(ids: string[]) {
-  try {
-    localStorage.setItem(LAST_PARTICIPANTS_KEY, JSON.stringify(ids));
-  } catch {
-    /* localStorage may be unavailable; not critical */
-  }
+// Reduce a map of integer values to their smallest whole-number ratio (divide
+// by the GCD). Used to prefill parts steppers when editing — e.g. cent shares
+// {4000, 2000, 2000} -> {2, 1, 1}. Falls back to the raw values if no clean GCD.
+function reduceToRatio(values: Record<string, number>): Record<string, number> {
+  const nums = Object.values(values).filter((v) => v > 0);
+  if (nums.length === 0) return {};
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const g = nums.reduce((a, b) => gcd(a, b));
+  const out: Record<string, number> = {};
+  for (const [id, v] of Object.entries(values)) out[id] = g > 0 ? Math.round(v / g) : v;
+  return out;
 }
 
 export function AddExpenseModal({
@@ -57,9 +47,15 @@ export function AddExpenseModal({
   // Who's involved in this expense (all modes). exact/percent show an input
   // row only for the included people.
   const [participants, setParticipants] = useState<Set<string>>(new Set());
+  // exact ($) / percent (%) free-text inputs, keyed by member id.
   const [shareInputs, setShareInputs] = useState<Record<string, string>>({});
+  // parts mode: integer ratio per member, keyed by member id.
+  const [partsInputs, setPartsInputs] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Show the logged-in user as "You" everywhere in the form.
+  const displayName = (m: { id: string; name: string }) => (m.id === meId ? "You" : m.name);
 
   useEffect(() => {
     if (!open) return;
@@ -74,28 +70,34 @@ export function AddExpenseModal({
       setParticipants(new Set(expense.shares.map((s) => s.memberId)));
       // Seed the per-person inputs for exact ($) / percent (%) modes.
       const inputs: Record<string, string> = {};
+      const parts: Record<string, number> = {};
       for (const s of expense.shares) {
         if (expense.splitType === "exact") {
           inputs[s.memberId] = centsToDollarString(s.share);
         } else if (expense.splitType === "percent") {
+          // Legacy percent expenses: recover the % from the stored cents.
           inputs[s.memberId] =
             expense.amount > 0 ? String(Math.round((s.share / expense.amount) * 100)) : "";
+        } else if (expense.splitType === "parts") {
+          // We don't store raw parts, but proportions are preserved. Re-derive a
+          // small whole-number ratio from the cent shares so steppers prefill.
+          parts[s.memberId] = s.share;
         }
       }
+      if (expense.splitType === "parts") setPartsInputs(reduceToRatio(parts));
       setShareInputs(inputs);
       return;
     }
 
-    // Creating: blank form, restoring the last picked people (kept if still in
-    // the group), falling back to everyone.
+    // Creating: blank form. You're selected by default (you're usually in the
+    // expense); tap to add the others, or remove yourself for the rare case.
     setDescription("");
     setAmountStr("");
     setPaidBy(meId);
     setSplitType("equal");
-    const memberIds = new Set(members.map((m) => m.id));
-    const saved = loadLastParticipants()?.filter((id) => memberIds.has(id));
-    setParticipants(saved && saved.length > 0 ? new Set(saved) : new Set(memberIds));
+    setParticipants(new Set([meId]));
     setShareInputs({});
+    setPartsInputs({});
   }, [open, meId, members, expense]);
 
   const amountCents = parseDollarsToCents(amountStr) ?? 0;
@@ -119,6 +121,30 @@ export function AddExpenseModal({
   // isn't the payer — otherwise it nets to zero (e.g. "Carrie paid for Carrie").
   const hasOtherParticipant = includedMembers.some((m) => m.id !== paidBy);
 
+  // Exact mode convenience (when CREATING — editing respects existing values):
+  // if exactly one person is included, they owe the full amount, so auto-fill it.
+  // When the included set changes to anything else, clear the exact inputs.
+  // Stable string key so this only runs when the SET changes, not on each keystroke.
+  const includedKey = includedMembers.map((m) => m.id).join(",");
+  useEffect(() => {
+    if (!open || isEdit || splitType !== "exact") return;
+    if (includedMembers.length === 1) {
+      setShareInputs({ [includedMembers[0].id]: amountStr });
+    } else {
+      setShareInputs({});
+    }
+    // amountStr intentionally omitted: don't overwrite manual edits on every
+    // amount keystroke when 2+ are selected. The 1-person case re-syncs below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isEdit, splitType, includedKey]);
+
+  // Keep the single-person exact auto-fill in sync as the amount changes.
+  useEffect(() => {
+    if (!open || isEdit || splitType !== "exact" || includedMembers.length !== 1) return;
+    setShareInputs({ [includedMembers[0].id]: amountStr });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amountStr]);
+
   // Live preview of what each person owes, for feedback while typing. Only the
   // included people are considered, in every mode.
   const preview = useMemo(() => {
@@ -138,14 +164,35 @@ export function AddExpenseModal({
         const c = parseDollarsToCents(shareInputs[id] ?? "");
         if (c && c > 0) out[id] = c;
       }
+    } else if (splitType === "parts") {
+      const totalParts = ids.reduce((a, id) => a + (partsInputs[id] || 0), 0);
+      if (totalParts > 0 && amountCents > 0) {
+        // Same proportional+remainder split the server uses, for an exact preview.
+        let allocated = 0;
+        for (const id of ids) {
+          const n = partsInputs[id] || 0;
+          const share = Math.round((amountCents * n) / totalParts);
+          if (n > 0) out[id] = share;
+          allocated += share;
+        }
+        // Drop rounding drift on the biggest share so the preview sums exactly.
+        const drift = amountCents - allocated;
+        if (drift !== 0) {
+          const biggest = ids
+            .filter((id) => (partsInputs[id] || 0) > 0)
+            .sort((a, b) => (out[b] ?? 0) - (out[a] ?? 0))[0];
+          if (biggest != null) out[biggest] = (out[biggest] ?? 0) + drift;
+        }
+      }
     } else {
+      // legacy percent
       for (const id of ids) {
         const pct = Number(shareInputs[id] ?? "");
         if (Number.isFinite(pct) && pct > 0) out[id] = Math.round((amountCents * pct) / 100);
       }
     }
     return out;
-  }, [splitType, includedMembers, amountCents, shareInputs]);
+  }, [splitType, includedMembers, amountCents, shareInputs, partsInputs]);
 
   const previewTotal = Object.values(preview).reduce((a, b) => a + b, 0);
   const exactTotalMismatch =
@@ -155,6 +202,19 @@ export function AddExpenseModal({
     return includedMembers.reduce((a, m) => a + (Number(shareInputs[m.id] ?? "") || 0), 0);
   }, [splitType, shareInputs, includedMembers]);
 
+  // Total parts assigned across included people (parts mode).
+  const partsTotal = useMemo(
+    () => includedMembers.reduce((a, m) => a + (partsInputs[m.id] || 0), 0),
+    [includedMembers, partsInputs],
+  );
+
+  function bumpParts(id: string, delta: number) {
+    setPartsInputs((prev) => {
+      const next = Math.max(0, (prev[id] || 0) + delta);
+      return { ...prev, [id]: next };
+    });
+  }
+
   async function submit() {
     setError(null);
     if (amountCents <= 0) {
@@ -163,6 +223,10 @@ export function AddExpenseModal({
     }
     if (!hasOtherParticipant) {
       setError("Split this with at least one other person");
+      return;
+    }
+    if (splitType === "parts" && partsTotal <= 0) {
+      setError("Give at least one person a share");
       return;
     }
     setBusy(true);
@@ -179,7 +243,12 @@ export function AddExpenseModal({
         payload.shares = includedMembers
           .map((m) => ({ memberId: m.id, value: parseDollarsToCents(shareInputs[m.id] ?? "") ?? 0 }))
           .filter((s) => s.value > 0);
+      } else if (splitType === "parts") {
+        payload.shares = includedMembers
+          .map((m) => ({ memberId: m.id, value: partsInputs[m.id] || 0 }))
+          .filter((s) => s.value > 0);
       } else {
+        // legacy percent
         payload.shares = includedMembers
           .map((m) => ({ memberId: m.id, value: Number(shareInputs[m.id] ?? "") || 0 }))
           .filter((s) => s.value > 0);
@@ -194,8 +263,6 @@ export function AddExpenseModal({
           method: "POST",
           body: JSON.stringify(payload),
         });
-        // Remember who this expense was split among for next time.
-        saveLastParticipants(includedMembers.map((m) => m.id));
       }
       onSaved();
       onClose();
@@ -253,7 +320,7 @@ export function AddExpenseModal({
               onChange={setPaidBy}
               options={members.map((m) => ({
                 value: m.id,
-                label: m.id === meId ? `${m.name} (you)` : m.name,
+                label: displayName(m),
               }))}
             />
           </div>
@@ -262,7 +329,7 @@ export function AddExpenseModal({
         <div>
           <label className="label">Split</label>
           <div className="grid grid-cols-3 gap-2">
-            {(["equal", "exact", "percent"] as SplitType[]).map((t) => (
+            {(["equal", "exact", "parts"] as SplitType[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -273,10 +340,16 @@ export function AddExpenseModal({
                     : "bg-ink-700 text-ink-100 hover:bg-ink-600"
                 }`}
               >
-                {t === "equal" ? "Equally" : t}
+                {t === "equal" ? "Equally" : t === "parts" ? "Shares" : t}
               </button>
             ))}
           </div>
+          {/* Old expenses saved as % keep a read-only mode label so editing works. */}
+          {splitType === "percent" && (
+            <p className="mt-1.5 text-xs text-ink-300">
+              Split by percentage (legacy). Switch to Shares or Exact to change.
+            </p>
+          )}
         </div>
 
         {/* Split detail */}
@@ -285,14 +358,16 @@ export function AddExpenseModal({
           <div className="space-y-2">
             <p className="text-xs text-ink-300">Tap to include / exclude people.</p>
             <div className="flex flex-wrap gap-2">
-              {members.map((m) => (
+              {[...members]
+                .sort((a, b) => (a.id === meId ? -1 : b.id === meId ? 1 : 0))
+                .map((m) => (
                 <button
                   key={m.id}
                   type="button"
                   onClick={() => toggleParticipant(m.id)}
                   className={`chip ${participants.has(m.id) ? "chip-on" : ""}`}
                 >
-                  {m.name}
+                  {displayName(m)}
                   {splitType === "equal" && preview[m.id] != null && participants.has(m.id) && (
                     <span className="text-xs opacity-80">{formatCents(preview[m.id])}</span>
                   )}
@@ -310,20 +385,52 @@ export function AddExpenseModal({
                 <>
                   {includedMembers.map((m) => (
                     <div key={m.id} className="flex items-center gap-3">
-                      <span className="flex-1 text-sm">{m.name}</span>
-                      <div className="flex items-center gap-1.5">
-                        {splitType === "exact" && <span className="text-ink-300">$</span>}
-                        <input
-                          className="input w-24 py-1.5 text-right"
-                          inputMode="decimal"
-                          placeholder={splitType === "percent" ? "0" : "0.00"}
-                          value={shareInputs[m.id] ?? ""}
-                          onChange={(e) =>
-                            setShareInputs((prev) => ({ ...prev, [m.id]: e.target.value }))
-                          }
-                        />
-                        {splitType === "percent" && <span className="text-ink-300">%</span>}
-                      </div>
+                      <span className="flex-1 text-sm">{displayName(m)}</span>
+
+                      {splitType === "parts" ? (
+                        // Stepper: tap +/- to set ratio parts; live $ shown beside.
+                        <div className="flex items-center gap-2">
+                          <span className="w-16 text-right text-xs tabular-nums text-ink-300">
+                            {preview[m.id] != null ? formatCents(preview[m.id]) : ""}
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => bumpParts(m.id, -1)}
+                              disabled={(partsInputs[m.id] || 0) <= 0}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink-700 text-lg text-ink-100 hover:bg-ink-600 disabled:opacity-40"
+                              aria-label={`Decrease ${m.name}'s share`}
+                            >
+                              –
+                            </button>
+                            <span className="w-6 text-center text-sm font-semibold tabular-nums">
+                              {partsInputs[m.id] || 0}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => bumpParts(m.id, 1)}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg bg-ink-700 text-lg text-ink-100 hover:bg-ink-600"
+                              aria-label={`Increase ${m.name}'s share`}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          {splitType === "exact" && <span className="text-ink-300">$</span>}
+                          <input
+                            className="input w-24 py-1.5 text-right"
+                            inputMode="decimal"
+                            placeholder={splitType === "percent" ? "0" : "0.00"}
+                            value={shareInputs[m.id] ?? ""}
+                            onChange={(e) =>
+                              setShareInputs((prev) => ({ ...prev, [m.id]: e.target.value }))
+                            }
+                          />
+                          {splitType === "percent" && <span className="text-ink-300">%</span>}
+                        </div>
+                      )}
                     </div>
                   ))}
                   <div className="flex justify-between pt-2 text-xs">
@@ -332,6 +439,13 @@ export function AddExpenseModal({
                         <span className="text-ink-300">Allocated</span>
                         <span className={exactTotalMismatch ? "text-red-300" : "text-brand-300"}>
                           {formatCents(previewTotal)} / {formatCents(amountCents)}
+                        </span>
+                      </>
+                    ) : splitType === "parts" ? (
+                      <>
+                        <span className="text-ink-300">Total shares</span>
+                        <span className={partsTotal > 0 ? "text-brand-300" : "text-red-300"}>
+                          {partsTotal}
                         </span>
                       </>
                     ) : (
@@ -361,7 +475,13 @@ export function AddExpenseModal({
 
         <button
           onClick={submit}
-          disabled={busy || !description.trim() || amountCents <= 0 || !hasOtherParticipant}
+          disabled={
+            busy ||
+            !description.trim() ||
+            amountCents <= 0 ||
+            !hasOtherParticipant ||
+            (splitType === "parts" && partsTotal <= 0)
+          }
           className="btn-primary w-full"
         >
           {busy ? (

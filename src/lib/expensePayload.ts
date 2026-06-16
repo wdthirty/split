@@ -1,8 +1,9 @@
 import { sql } from "./db";
-import { splitEqually, splitByPercent } from "./balances";
+import { splitEqually, splitByPercent, splitByParts } from "./balances";
 import type { SplitType } from "./types";
 
-export type SharePayload = { memberId: string; value: number }; // cents (exact) or percent
+// value: cents (exact) | percent (percent) | parts count (parts)
+export type SharePayload = { memberId: string; value: number };
 
 export type ExpenseBody = {
   description?: string;
@@ -66,6 +67,17 @@ export async function parseExpenseBody(
     shareMap = splitByPercent(
       amount,
       shares.map((s) => ({ memberId: s.memberId, percent: s.value })),
+    );
+  } else if (splitType === "parts") {
+    // value = number of ratio parts per member; app divides the total by them.
+    const shares = body.shares ?? [];
+    const totalParts = shares.reduce((a, b) => a + Math.max(0, b.value), 0);
+    if (totalParts <= 0) {
+      return { ok: false, error: "Give at least one person a share", status: 400 };
+    }
+    shareMap = splitByParts(
+      amount,
+      shares.map((s) => ({ memberId: s.memberId, parts: s.value })),
     );
   } else {
     return { ok: false, error: "Unknown split type", status: 400 };

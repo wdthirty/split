@@ -134,3 +134,36 @@ export function splitByPercent(
   }
   return out;
 }
+
+/**
+ * Split a total by integer "parts" (ratio shares). Each member's cut is
+ * proportional to their parts: with parts {A:2, B:1, C:1} the total splits
+ * 2/4, 1/4, 1/4. Members with 0 parts get nothing. Any rounding drift is pushed
+ * onto the largest share so the cents always sum to the total exactly.
+ */
+export function splitByParts(
+  totalCents: number,
+  parts: { memberId: string; parts: number }[],
+): Map<string, number> {
+  const out = new Map<string, number>();
+  const totalParts = parts.reduce((a, p) => a + Math.max(0, p.parts), 0);
+  if (totalParts <= 0) return out;
+
+  let allocated = 0;
+  for (const p of parts) {
+    const n = Math.max(0, p.parts);
+    const share = Math.round((totalCents * n) / totalParts);
+    out.set(p.memberId, share);
+    allocated += share;
+  }
+  // Reconcile rounding onto the member with the most parts (largest share).
+  const drift = totalCents - allocated;
+  if (drift !== 0) {
+    let largest = parts[0].memberId;
+    for (const p of parts) {
+      if ((out.get(p.memberId) ?? 0) > (out.get(largest) ?? 0)) largest = p.memberId;
+    }
+    out.set(largest, (out.get(largest) ?? 0) + drift);
+  }
+  return out;
+}

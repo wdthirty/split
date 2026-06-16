@@ -150,14 +150,15 @@ export function SettleUpModal({
     }
   }
 
-  const nameOf = (id: string) => members.find((m) => m.id === id)?.name ?? "";
+  const nameOf = (id: string) =>
+    id === meId ? "You" : (members.find((m) => m.id === id)?.name ?? "");
 
   // Build receiver options: people I owe float to the top (with a red dot),
   // then everyone else, alphabetical within each group.
   const receiverOptions = members
     .map((m) => ({
       value: m.id,
-      label: m.id === meId ? `${m.name} (you)` : m.name,
+      label: m.id === meId ? "You" : m.name,
       // Flag (and float) people I owe money to.
       dot: (tabByMember.get(m.id) ?? 0) < 0,
       iOwe: -(tabByMember.get(m.id) ?? 0), // +ve amount I owe them, else <=0
@@ -181,7 +182,7 @@ export function SettleUpModal({
               onChange={setFrom}
               options={members.map((m) => ({
                 value: m.id,
-                label: m.id === meId ? `${m.name} (you)` : m.name,
+                label: m.id === meId ? "You" : m.name,
               }))}
             />
           </div>
