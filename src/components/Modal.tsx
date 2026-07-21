@@ -11,11 +11,15 @@ export function Modal({
   onClose,
   title,
   children,
+  center = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  // Center the dialog on all screen sizes instead of the default mobile
+  // bottom-sheet (which also disables the swipe-down-to-dismiss drag).
+  center?: boolean;
 }) {
   // Vertical drag offset of the sheet, in px. 0 = resting position.
   const [dragY, setDragY] = useState(0);
@@ -88,12 +92,18 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-0 sm:items-center sm:p-4"
+      className={
+        "fixed inset-0 z-50 flex justify-center bg-black/60 " +
+        (center ? "items-center p-4" : "items-end p-0 sm:items-center sm:p-4")
+      }
       onClick={onClose}
     >
       <div
-        className="card w-full max-w-md max-h-[92vh] overflow-y-auto rounded-b-none px-5 pt-3 pb-5 backdrop-blur-md
-                   [padding-bottom:max(1.25rem,env(safe-area-inset-bottom))] sm:rounded-2xl sm:pt-5 sm:pb-5"
+        className={
+          "card w-full max-w-md max-h-[92vh] overflow-y-auto px-5 pt-3 pb-5 backdrop-blur-md " +
+          "[padding-bottom:max(1.25rem,env(safe-area-inset-bottom))] sm:pt-5 sm:pb-5 " +
+          (center ? "rounded-2xl" : "rounded-b-none sm:rounded-2xl")
+        }
         onClick={(e) => e.stopPropagation()}
         style={{
           transform: dragY ? `translateY(${dragY}px)` : undefined,
@@ -101,15 +111,21 @@ export function Modal({
         }}
       >
         {/* Grab handle + title double as the drag region (mobile bottom-sheet).
-            touch-none keeps the browser from hijacking the gesture as a scroll. */}
+            touch-none keeps the browser from hijacking the gesture as a scroll.
+            When centered we skip the drag handlers entirely. */}
         <div
-          className="-mx-5 -mt-3 cursor-grab touch-none px-5 pt-3 active:cursor-grabbing sm:cursor-auto"
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerCancel={endDrag}
+          className={
+            "-mx-5 -mt-3 px-5 pt-3 " +
+            (center ? "" : "cursor-grab touch-none active:cursor-grabbing sm:cursor-auto")
+          }
+          onPointerDown={center ? undefined : onPointerDown}
+          onPointerMove={center ? undefined : onPointerMove}
+          onPointerUp={center ? undefined : endDrag}
+          onPointerCancel={center ? undefined : endDrag}
         >
-          <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-ink-500 sm:hidden" />
+          {!center && (
+            <div className="mx-auto mb-3 h-1.5 w-10 rounded-full bg-ink-500 sm:hidden" />
+          )}
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-bold">{title}</h2>
           </div>
